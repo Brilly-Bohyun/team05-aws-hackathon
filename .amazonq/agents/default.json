@@ -1,0 +1,60 @@
+{
+  "name": "awslabsaws-diagram-mcp-server",
+  "version": "1.0.0",
+  "description": "SolutionsArchitect agent configuration",
+  "mcpServers": {
+    "awslabs.aws-diagram-mcp-server": {
+      "command": "/Users/binhao/.local/bin/uvx",
+      "disabled": false,
+      "timeout": 60000,
+      "args": [
+        "awslabs.aws-diagram-mcp-server"
+      ],
+      "env": {
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+      }
+    }
+  },
+  "tools": [
+    "fsRead",
+    "fsWrite",
+    "fsReplace",
+    "listDirectory",
+    "fileSearch",
+    "executeBash",
+    "codeReview",
+    "displayFindings",
+    "@awslabs.aws-diagram-mcp-server"
+  ],
+  "allowedTools": [
+    "fsRead",
+    "listDirectory",
+    "fileSearch",
+    "codeReview",
+    "displayFindings"
+  ],
+  "toolsSettings": {
+    "execute_bash": {
+      "alwaysAllow": [
+        {
+          "preset": "readOnly"
+        }
+      ]
+    },
+    "use_aws": {
+      "alwaysAllow": [
+        {
+          "preset": "readOnly"
+        }
+      ]
+    }
+  },
+  "includedFiles": [
+    "AmazonQ.md",
+    "README.md",
+    ".amazonq/rules/**/*.md"
+  ],
+  "resources": [],
+  "createHooks": [],
+  "promptHooks": []
+}
