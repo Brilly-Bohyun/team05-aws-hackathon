@@ -72,6 +72,14 @@ resource "aws_iam_role_policy" "lambda_policy" {
           "dynamodb:*"
         ]
         Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "codebuild:StartBuild",
+          "codebuild:BatchGetBuilds"
+        ]
+        Resource = "*"
       }
     ]
   })
