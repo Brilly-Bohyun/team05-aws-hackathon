@@ -33,24 +33,29 @@ AWS 콘솔에서 급하게 생성한 리소스들이 Terraform State와 일치�
 ### 구성 요소
 - **CloudTrail**: AWS 리소스 생성 이벤트 감지
 - **SNS → SQS**: 이벤트 전달 파이프라인
-- **Lambda Functions**: 이벤트 처리, 리소스 관리, Terraform 실행
+- **Lambda Functions**: 이벤트 처리, 리소스 관리, Slack 알림
 - **Slack**: 사용자 알림 및 상호작용
 - **API Gateway**: Slack 버튼 클릭 처리
-- **S3**: Terraform State 및 소스 코드 저장
-- **DynamoDB**: 이벤트 저장소
+- **CodeBuild**: Terraform import 및 Git 동기화 자동 실행
+- **S3**: Terraform State 저장 (원격 backend)
+- **DynamoDB**: State locking 및 이벤트 저장소
+- **Secrets Manager**: GitHub Token 안전한 저장
 
 ## 리소스 배포하기
 
 ### 사전 요구사항
 - AWS CLI 설치 및 구성
 - Terraform 1.0 이상 설치
-- Slack Webhook URL
+- GitHub Personal Access Token (자동 Git 동기화용)
 
 ### 배포 단계
 
-1. **환경 변수 설정**
+1. **GitHub Token 설정**
 ```bash
-export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+aws secretsmanager put-secret-value \
+  --secret-id github-token \
+  --secret-string '{"token":"your-github-token-here"}' \
+  --region us-east-1
 ```
 
 2. **전체 인프라 배포**
@@ -66,6 +71,7 @@ export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
 5. `cloudtrail/` - AWS 리소스 생성 감지
 6. `lambda/` - 이벤트 처리 Lambda 함수들
 7. `api-gateway/` - Slack 상호작용용 API Gateway
+8. `codebuild/` - Terraform import 및 Git 동기화용 CodeBuild
 
 ### 리소스 삭제
 ```bash
@@ -85,16 +91,37 @@ terraform init && terraform apply
 
 ## 사용 방법
 
-1. **Slack App 설정**
-   - 배포 완료 후 출력되는 API Gateway URL을 Slack App의 Interactive Components에 등록
+### 자동화된 워크플로우
 
-2. **리소스 생성 테스트**
-   - AWS 콘솔에서 S3 버킷이나 EC2 인스턴스 생성
-   - Slack에서 알림 확인 및 버튼 클릭
+1. **AWS 콘솔에서 리소스 생성**
+   - S3 버킷, EC2 인스턴스 등 생성
+   - CloudTrail이 자동으로 이벤트 감지
 
-3. **Terraform 코드 확인**
-   - S3 버킷에서 자동 생성된 Terraform 코드 확인
-   - 필요시 추가 설정 및 수정
+2. **Slack 알림 수신**
+   - 새로운 리소스 생성 알림
+   - "Terraform으로 관리" 버튼 클릭
+
+3. **자동 처리**
+   - CodeBuild가 자동으로 실행됨
+   - Terraform import 및 State 업데이트
+   - Git 레포지토리에 자동 커밋
+
+4. **결과 확인**
+   - `terraform/s3_bucket/` 디렉토리에 새 `.tf` 파일 생성
+   - 로컬에서 `terraform plan` 실행하여 동기화 확인
+
+### 수동 테스트
+
+```bash
+# CodeBuild 수동 실행 예시
+aws codebuild start-build \
+  --project-name terraform-sync-import \
+  --environment-variables-override \
+    name=RESOURCE_TYPE,value=s3_bucket \
+    name=RESOURCE_NAME,value=test-bucket-123 \
+    name=RESOURCE_ID,value=test-bucket-123 \
+    name=TERRAFORM_CODE,value='resource "aws_s3_bucket" "test-bucket-123" { bucket = "test-bucket-123" }'
+```
 
 ## 프로젝트 기대 효과 및 예상 사용 사례
 
@@ -122,8 +149,18 @@ terraform init && terraform apply
    - 개발자들이 실험 목적으로 생성한 리소스들을 즉시 감지하여 불필요한 비용 방지
 
 ## 기술 스택
-- **Infrastructure**: AWS (CloudTrail, SNS, SQS, Lambda, API Gateway, S3, DynamoDB)
-- **IaC**: Terraform
+- **Infrastructure**: AWS (CloudTrail, SNS, SQS, Lambda, API Gateway, S3, DynamoDB, CodeBuild)
+- **IaC**: Terraform (Remote State with S3 + DynamoDB)
 - **Runtime**: Python 3.9
+- **CI/CD**: AWS CodeBuild
+- **Version Control**: Git (Auto-commit & Push)
 - **Notification**: Slack
 - **Monitoring**: CloudWatch (자동 설정)
+- **Secrets Management**: AWS Secrets Manager
+
+## 주요 개선사항
+
+- **원격 State 공유**: S3 backend + DynamoDB locking으로 팀 내 State 일관성 보장
+- **자동 Git 동기화**: CodeBuild에서 자동으로 커밋 및 푸시
+- **완전 자동화**: 수동 개입 없이 AWS 콘솔 → Terraform State → Git 동기화
+- **실시간 처리**: CloudTrail 이벤트 기반 즉시 감지 및 처리
