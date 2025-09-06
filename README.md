@@ -18,17 +18,25 @@ AWS 콘솔에서 리소스를 생성한 후 Terraform State와 맞지 않아 Ter
 
 ### 새로운 리소스 생성시 Slack 알림 발송
 ![image](./pictures/slack-alarm.png)
-1. 콘솔에서 새로운 리소스가 생성되면 slack으로 알림이 받게 됩니다.
-2. 관리자는 이를 새롭게 import를 할 지, 삭제를 할 지 선택할 수 있습니다.
+1. 콘솔에서 새로운 리소스가 생성되면
+2. Cloud Trail에 있는 log를 기반으로 SNS -> SQS가 작동하고
+3. 수집된 log들을 Lambda에서 필터링을 한다.
+4. 필터링된 log를 기반으로 Slack에 알림을 발송한다.
+4. 관리자는 이를 새롭게 import를 할 지, 삭제를 할 지 선택할 수 있습니다.
 
 ### 리소스 삭제 결정시
 ![image](./pictures/slack-delete.png)
 1. 알림을 받은 slack에서 `리소스 삭제` 버튼을 누르면
 2. 자동으로 실 리소스가 삭제되어 콘솔에서 확인되지 않는 것을 보실 수 있습니다.
 
-### 리소스 유지 결정시
-
-### terraform state 파일 동기화
+### 리소스 유지 결정시 (테라폼 코드 업데이트 및 state 동기화)
+![image](./pictures/slack-import.png)
+![image](./pictures/terraform%20state.png)
+1. 알림을 받은 slack에서 `Terrafrom으로 관리` 버튼을 누르면
+2. API Gateway -> Lambda의 흐름으로 간 후, Lambda에서 CodeBuild를 실행한다.
+3. CodeBuild에서는 새로운 테라폼 리소스 코드를 생성하고 import 명령어를 날려서 state를 동기화한다
+4. terraform plan을 통해 state가 제대로 동기화 되었는지 확인한다
+5. git repository에 변경사항을 push한다
 
 ## 동영상 데모
 
