@@ -44,6 +44,7 @@ CloudTrail을 통해 새로운 리소스 생성을 즉시 감지하고, Slack을
 ## 동영상 데모
 
 Amazon Q Developer로 구현한 어플리케이션의 데모 영상을 입력합니다.
+![Gif](./pictures/video.gif)
 **Git의 Readme에는 GIF 형식으로 업로드하며, 원본 동영상은 발표 Presentation에 제출합니다.**
 
 ## 리소스 배포하기
