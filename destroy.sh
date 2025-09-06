@@ -6,6 +6,7 @@ echo "🗑️ Terraform State 동기화 서비스 리소스 삭제 시작..."
 
 # 삭제 순서 (배포의 역순)
 DESTROY_ORDER=(
+    "codebuild"
     "api-gateway"
     "lambda"
     "cloudtrail"

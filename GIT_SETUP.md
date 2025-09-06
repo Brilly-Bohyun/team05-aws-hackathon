@@ -1,4 +1,4 @@
-# Git 푸시 설정 가이드
+# Git 자동 동기화 설정 가이드
 
 ## 1. GitHub Personal Access Token 생성
 
@@ -18,43 +18,47 @@ aws secretsmanager put-secret-value \
   --region us-east-1
 ```
 
-## 3. Git 레포지토리 URL 수정
-
-`terraform/lambda/src/action_handler.py`에서 실제 레포지토리 URL로 변경:
-
-```python
-{
-    'name': 'GIT_REPO_URL',
-    'value': 'https://github.com/Brilly-Bohyun/team05-aws-hackathon.git'
-}
-```
-
-## 4. buildspec.yml에서 레포지토리 URL 수정
-
-`buildspec.yml`에서 실제 레포지토리 URL로 변경:
-
-```yaml
-- git clone https://$GITHUB_TOKEN@github.com/Brilly-Bohyun/team05-aws-hackathon.git /tmp/git-repo
-```
-
-## 5. 배포
+## 3. CodeBuild 프로젝트 배포
 
 ```bash
 cd terraform/codebuild
-terraform apply -auto-approve
-
-cd ../lambda
-terraform taint aws_lambda_function.action_handler
+terraform init
 terraform apply -auto-approve
 ```
 
-## 완성된 흐름
+## 4. 시스템 테스트
 
-1. **S3 버킷 생성** → Slack 알림
-2. **"Terraform으로 관리" 클릭** → CodeBuild 시작
-3. **CodeBuild 실행**:
-   - Terraform import
-   - State 업데이트
-   - S3에 파일 저장
-   - **Git에 자동 푸시** ✅
-4. **결과**: https://github.com/Brilly-Bohyun/team05-aws-hackathon 레포지토리에 새 Terraform 파일 커밋됨
+1. AWS 콘솔에서 S3 버킷 생성 (예: `test-bucket-123`)
+2. CodeBuild 프로젝트 수동 실행:
+   ```bash
+   aws codebuild start-build \
+     --project-name terraform-sync-import \
+     --environment-variables-override \
+       name=RESOURCE_TYPE,value=s3_bucket \
+       name=RESOURCE_NAME,value=test-bucket-123 \
+       name=RESOURCE_ID,value=test-bucket-123 \
+       name=TERRAFORM_CODE,value='resource "aws_s3_bucket" "test-bucket-123" { bucket = "test-bucket-123" }'
+   ```
+3. Git 레포지토리에서 새로운 파일 확인: `terraform/s3_bucket/test-bucket-123.tf`
+
+## 완성된 자동화 흐름
+
+1. **AWS 콘솔에서 리소스 생성** (예: S3 버킷)
+2. **CloudTrail 이벤트 감지** → SNS → SQS → Lambda
+3. **Slack 알림 전송** ("Terraform으로 관리" 버튼 포함)
+4. **사용자가 버튼 클릭** → API Gateway → Lambda
+5. **CodeBuild 자동 실행**:
+   - 원격 Terraform State 사용 (`terraform-sync-state-6395e36ea95d48ee` S3 버킷)
+   - `terraform import` 실행
+   - 리소스를 State에 추가
+   - **Git에 자동 커밋 및 푸시** ✅
+6. **결과**: 
+   - 원격 State 업데이트됨
+   - Git 레포지토리에 새 Terraform 파일 추가됨
+   - 팀원들이 `terraform plan` 실행 시 동기화된 State 확인 가능
+
+## 주요 특징
+
+- **원격 State 공유**: 모든 팀원이 동일한 S3 backend 사용
+- **자동 Git 동기화**: CodeBuild에서 자동으로 커밋 및 푸시
+- **State 일관성**: 로컬과 원격 State 완전 동기화
