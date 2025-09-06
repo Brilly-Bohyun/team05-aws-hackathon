@@ -4,9 +4,3 @@ resource "aws_instance" "i-022292871fa922577" {
   subnet_id     = "subnet-0f0a7f72b7f1d65af"
   vpc_security_group_ids = ["sg-0a028877b6e96c0bc"]
 }
-resource "aws_instance" "i-0e16eaf30cb881f4b" {
-  ami           = "ami-06883c95d78ea3e7a"
-  instance_type = "t3.micro"
-  subnet_id     = "subnet-0f0a7f72b7f1d65af"
-  vpc_security_group_ids = ["sg-0a028877b6e96c0bc"]
-}
