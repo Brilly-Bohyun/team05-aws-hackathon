@@ -1,0 +1,163 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      python: 3.9
+    commands:
+      - echo "Installing Terraform..."
+      - wget https://releases.hashicorp.com/terraform/1.5.0/terraform_1.5.0_linux_amd64.zip
+      - unzip terraform_1.5.0_linux_amd64.zip
+      - mv terraform /usr/local/bin/
+      - terraform version
+  pre_build:
+    commands:
+      - echo "Getting GitHub token from Secrets Manager..."
+      - export GITHUB_TOKEN=$(aws secretsmanager get-secret-value --secret-id github-token --query SecretString --output text | jq -r .token)
+      - echo "Cloning Git repository..."
+      - git clone https://$GITHUB_TOKEN@github.com/Brilly-Bohyun/team05-aws-hackathon.git /tmp/git-repo
+      - echo "Setting up Terraform workspace..."
+      - mkdir -p /tmp/terraform-workspace
+      - echo "Copying existing Terraform files..."
+      - if [ -d "/tmp/git-repo/terraform/$RESOURCE_TYPE" ]; then
+          cp /tmp/git-repo/terraform/$RESOURCE_TYPE/*.tf /tmp/terraform-workspace/ 2>/dev/null || echo "No existing .tf files found"
+        fi
+      - cd /tmp/terraform-workspace
+      - echo "Creating Terraform configuration..."
+      - |
+        if [ "$RESOURCE_TYPE" = "ec2_instance" ]; then
+          echo "Fetching EC2 instance details..."
+          INSTANCE_INFO=$(aws ec2 describe-instances --instance-ids $RESOURCE_ID --query 'Reservations[0].Instances[0]')
+          AMI_ID=$(echo $INSTANCE_INFO | jq -r '.ImageId')
+          INSTANCE_TYPE=$(echo $INSTANCE_INFO | jq -r '.InstanceType')
+          SUBNET_ID=$(echo $INSTANCE_INFO | jq -r '.SubnetId // empty')
+          SECURITY_GROUPS=$(echo $INSTANCE_INFO | jq -r '.SecurityGroups[].GroupId' | tr '\n' ',' | sed 's/,$//')
+          
+          cat > $RESOURCE_NAME.tf << EC2_EOF
+        resource "aws_instance" "$RESOURCE_NAME" {
+          ami           = "$AMI_ID"
+          instance_type = "$INSTANCE_TYPE"
+        EC2_EOF
+          
+          if [ "$SUBNET_ID" != "null" ] && [ -n "$SUBNET_ID" ]; then
+            echo "  subnet_id     = \"$SUBNET_ID\"" >> $RESOURCE_NAME.tf
+          fi
+          
+          if [ -n "$SECURITY_GROUPS" ]; then
+            echo "  vpc_security_group_ids = [\"$(echo $SECURITY_GROUPS | sed 's/,/\", \"/g')\"]" >> $RESOURCE_NAME.tf
+          fi
+          
+          echo "}" >> $RESOURCE_NAME.tf
+        elif [ "$RESOURCE_TYPE" = "s3_bucket" ]; then
+          echo "Fetching S3 bucket details..."
+          VERSIONING=$(aws s3api get-bucket-versioning --bucket $RESOURCE_ID 2>/dev/null || echo '{"Status": "Suspended"}')
+          VERSIONING_STATUS=$(echo $VERSIONING | jq -r '.Status // "Suspended"')
+          
+          cat > $RESOURCE_NAME.tf << S3_EOF
+        resource "aws_s3_bucket" "$RESOURCE_NAME" {
+          bucket = "$RESOURCE_ID"
+        }
+        S3_EOF
+          
+          if [ "$VERSIONING_STATUS" = "Enabled" ]; then
+            cat >> $RESOURCE_NAME.tf << S3_VER_EOF
+        
+        resource "aws_s3_bucket_versioning" "$RESOURCE_NAME" {
+          bucket = aws_s3_bucket.$RESOURCE_NAME.id
+          versioning_configuration {
+            status = "Enabled"
+          }
+        }
+        S3_VER_EOF
+          fi
+        else
+          echo "$TERRAFORM_CODE" > $RESOURCE_NAME.tf
+        fi
+      - echo "Creating provider configuration..."
+      - |
+        cat > provider.tf << 'PROVIDER_EOF'
+        terraform {
+          required_version = ">= 1.0"
+          required_providers {
+            aws = {
+              source  = "hashicorp/aws"
+              version = "~> 5.0"
+            }
+          }
+          backend "s3" {
+            bucket         = "terraform-sync-state-6395e36ea95d48ee"
+            key            = "RESOURCE_TYPE_PLACEHOLDER/terraform.tfstate"
+            region         = "us-east-1"
+            dynamodb_table = "terraform-sync-locks"
+          }
+        }
+        provider "aws" {
+          region = "us-east-1"
+        }
+        PROVIDER_EOF
+        sed -i "s/RESOURCE_TYPE_PLACEHOLDER/$RESOURCE_TYPE/g" provider.tf
+  build:
+    commands:
+      - echo "Initializing Terraform..."
+      - terraform init
+      - echo "Importing resource to Terraform state..."
+      - |
+        case $RESOURCE_TYPE in
+          "ec2_instance")
+            TF_RESOURCE_TYPE="instance"
+            ;;
+          "s3_bucket")
+            TF_RESOURCE_TYPE="s3_bucket"
+            ;;
+          *)
+            TF_RESOURCE_TYPE="$RESOURCE_TYPE"
+            ;;
+        esac
+        echo "RESOURCE_TYPE=$RESOURCE_TYPE"
+        echo "TF_RESOURCE_TYPE=$TF_RESOURCE_TYPE"
+        echo "RESOURCE_NAME=$RESOURCE_NAME"
+        echo "RESOURCE_ID=$RESOURCE_ID"
+      - |
+        # Check if resource already exists in state
+        if terraform state show aws_$TF_RESOURCE_TYPE.$RESOURCE_NAME >/dev/null 2>&1; then
+          echo "Resource aws_$TF_RESOURCE_TYPE.$RESOURCE_NAME already exists in state, skipping import..."
+        else
+          echo "Importing resource aws_$TF_RESOURCE_TYPE.$RESOURCE_NAME..."
+          terraform import aws_$TF_RESOURCE_TYPE.$RESOURCE_NAME $RESOURCE_ID
+        fi
+      - |
+        if [ "$RESOURCE_TYPE" = "s3_bucket" ]; then
+          VERSIONING=$(aws s3api get-bucket-versioning --bucket $RESOURCE_ID 2>/dev/null || echo '{"Status": "Suspended"}')
+          VERSIONING_STATUS=$(echo $VERSIONING | jq -r '.Status // "Suspended"')
+          if [ "$VERSIONING_STATUS" = "Enabled" ]; then
+            if terraform state show aws_s3_bucket_versioning.$RESOURCE_NAME >/dev/null 2>&1; then
+              echo "S3 bucket versioning already exists in state, skipping import..."
+            else
+              echo "Importing S3 bucket versioning..."
+              terraform import aws_s3_bucket_versioning.$RESOURCE_NAME $RESOURCE_ID || echo "Versioning import failed"
+            fi
+          fi
+        fi
+      - echo "Running terraform plan..."
+      - terraform plan
+      - echo "Applying Terraform configuration..."
+      - terraform apply -auto-approve
+  post_build:
+    commands:
+      - cd /tmp/git-repo
+      - echo "Configuring Git..."
+      - git config user.name "Terraform Sync Bot"
+      - git config user.email "terraform-sync@company.com"
+      - echo "Pulling latest changes..."
+      - git pull origin main
+      - echo "Copying Terraform files to Git repository..."
+      - mkdir -p terraform/$RESOURCE_TYPE
+      - cp /tmp/terraform-workspace/$RESOURCE_NAME.tf terraform/$RESOURCE_TYPE/
+      - echo "Adding files to Git..."
+      - git add terraform/$RESOURCE_TYPE/$RESOURCE_NAME.tf
+      - echo "Committing changes..."
+      - git commit -m "feat Import $RESOURCE_TYPE resource $RESOURCE_NAME to Terraform" || echo "No changes to commit"
+      - echo "Pulling latest changes before push..."
+      - git pull --rebase origin main
+      - echo "Pushing to Git repository..."
+      - git push origin main
+      - echo "Terraform import completed successfully!"
