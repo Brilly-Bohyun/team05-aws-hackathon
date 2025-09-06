@@ -166,4 +166,5 @@ resource "aws_lambda_function" "ec2_creator" {
   handler         = "lambda_function.lambda_handler"
   runtime         = "python3.9"
   timeout         = 60
+  source_code_hash = data.archive_file.ec2_creator_zip.output_base64sha256
 }
