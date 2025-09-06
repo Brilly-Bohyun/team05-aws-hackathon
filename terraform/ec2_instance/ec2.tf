@@ -10,3 +10,10 @@ resource "aws_instance" "i-0719fb0cd6f36b680" {
   subnet_id     = "subnet-0cd8237100f6181a4"
   vpc_security_group_ids = ["sg-031ae1f78feafe67a"]
 }
+
+resource "aws_instance" "i-0719fb0cd6f36b680" {
+  ami           = "ami-00ca32bbc84273381"
+  instance_type = "t3.micro"
+  subnet_id     = "subnet-0cd8237100f6181a4"
+  vpc_security_group_ids = ["sg-031ae1f78feafe67a"]
+}
