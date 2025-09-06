@@ -1,5 +1,6 @@
 import boto3
 import json
+import uuid
 
 def lambda_handler(event, context):
     ec2 = boto3.client('ec2')
@@ -31,7 +32,7 @@ def lambda_handler(event, context):
                     'Tags': [
                         {
                             'Key': 'Name',
-                            'Value': 'test_rocket'
+                            'Value': f'test_rocket_{str(uuid.uuid4())[:8]}'
                         }
                     ]
                 }
