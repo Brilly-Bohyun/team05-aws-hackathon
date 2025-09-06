@@ -17,15 +17,18 @@ phases:
       - git clone https://$GITHUB_TOKEN@github.com/Brilly-Bohyun/team05-aws-hackathon.git /tmp/git-repo
       - echo "Setting up Terraform workspace..."
       - mkdir -p /tmp/terraform-workspace
+      - echo "Setting up Terraform workspace..."
+      - mkdir -p /tmp/terraform-workspace
+      - cd /tmp/terraform-workspace
       - echo "Copying existing Terraform files..."
       - |
         if [ -d "/tmp/git-repo/terraform/$RESOURCE_TYPE" ]; then
           cp /tmp/git-repo/terraform/$RESOURCE_TYPE/*.tf /tmp/terraform-workspace/ 2>/dev/null || echo "No existing .tf files found"
         fi
-      - cd /tmp/terraform-workspace
       - echo "Creating Terraform configuration..."
       - |
         if [ "$RESOURCE_TYPE" = "ec2_instance" ]; then
+          TERRAFORM_FILE="ec2.tf"
           echo "Fetching EC2 instance details..."
           INSTANCE_INFO=$(aws ec2 describe-instances --instance-ids $RESOURCE_ID --query 'Reservations[0].Instances[0]')
           AMI_ID=$(echo $INSTANCE_INFO | jq -r '.ImageId')
@@ -33,34 +36,46 @@ phases:
           SUBNET_ID=$(echo $INSTANCE_INFO | jq -r '.SubnetId // empty')
           SECURITY_GROUPS=$(echo $INSTANCE_INFO | jq -r '.SecurityGroups[].GroupId' | tr '\n' ',' | sed 's/,$//')
           
-          cat > $RESOURCE_NAME.tf << EC2_EOF
+          # 새 리소스 생성
+          cat > /tmp/new_resource.tf << EC2_EOF
         resource "aws_instance" "$RESOURCE_NAME" {
           ami           = "$AMI_ID"
           instance_type = "$INSTANCE_TYPE"
         EC2_EOF
           
           if [ "$SUBNET_ID" != "null" ] && [ -n "$SUBNET_ID" ]; then
-            echo "  subnet_id     = \"$SUBNET_ID\"" >> $RESOURCE_NAME.tf
+            echo "  subnet_id     = \"$SUBNET_ID\"" >> /tmp/new_resource.tf
           fi
           
           if [ -n "$SECURITY_GROUPS" ]; then
-            echo "  vpc_security_group_ids = [\"$(echo $SECURITY_GROUPS | sed 's/,/\", \"/g')\"]" >> $RESOURCE_NAME.tf
+            echo "  vpc_security_group_ids = [\"$(echo $SECURITY_GROUPS | sed 's/,/\", \"/g')\"]" >> /tmp/new_resource.tf
           fi
           
-          echo "}" >> $RESOURCE_NAME.tf
+          echo "}" >> /tmp/new_resource.tf
+          
+          # 기존 파일이 있으면 추가, 없으면 새로 생성
+          if [ -f "$TERRAFORM_FILE" ]; then
+            echo "" >> $TERRAFORM_FILE
+            cat /tmp/new_resource.tf >> $TERRAFORM_FILE
+          else
+            cp /tmp/new_resource.tf $TERRAFORM_FILE
+          fi
+          
         elif [ "$RESOURCE_TYPE" = "s3_bucket" ]; then
+          TERRAFORM_FILE="s3.tf"
           echo "Fetching S3 bucket details..."
           VERSIONING=$(aws s3api get-bucket-versioning --bucket $RESOURCE_ID 2>/dev/null || echo '{"Status": "Suspended"}')
           VERSIONING_STATUS=$(echo $VERSIONING | jq -r '.Status // "Suspended"')
           
-          cat > $RESOURCE_NAME.tf << S3_EOF
+          # 새 리소스 생성
+          cat > /tmp/new_resource.tf << S3_EOF
         resource "aws_s3_bucket" "$RESOURCE_NAME" {
           bucket = "$RESOURCE_ID"
         }
         S3_EOF
           
           if [ "$VERSIONING_STATUS" = "Enabled" ]; then
-            cat >> $RESOURCE_NAME.tf << S3_VER_EOF
+            cat >> /tmp/new_resource.tf << S3_VER_EOF
         
         resource "aws_s3_bucket_versioning" "$RESOURCE_NAME" {
           bucket = aws_s3_bucket.$RESOURCE_NAME.id
@@ -70,6 +85,15 @@ phases:
         }
         S3_VER_EOF
           fi
+          
+          # 기존 파일이 있으면 추가, 없으면 새로 생성
+          if [ -f "$TERRAFORM_FILE" ]; then
+            echo "" >> $TERRAFORM_FILE
+            cat /tmp/new_resource.tf >> $TERRAFORM_FILE
+          else
+            cp /tmp/new_resource.tf $TERRAFORM_FILE
+          fi
+          
         else
           echo "$TERRAFORM_CODE" > $RESOURCE_NAME.tf
         fi
@@ -152,9 +176,18 @@ phases:
       - git pull origin main
       - echo "Copying Terraform files to Git repository..."
       - mkdir -p terraform/$RESOURCE_TYPE
-      - cp /tmp/terraform-workspace/$RESOURCE_NAME.tf terraform/$RESOURCE_TYPE/
+      - |
+        if [ "$RESOURCE_TYPE" = "ec2_instance" ]; then
+          cp /tmp/terraform-workspace/ec2.tf terraform/$RESOURCE_TYPE/
+          git add terraform/$RESOURCE_TYPE/ec2.tf
+        elif [ "$RESOURCE_TYPE" = "s3_bucket" ]; then
+          cp /tmp/terraform-workspace/s3.tf terraform/$RESOURCE_TYPE/
+          git add terraform/$RESOURCE_TYPE/s3.tf
+        else
+          cp /tmp/terraform-workspace/$RESOURCE_NAME.tf terraform/$RESOURCE_TYPE/
+          git add terraform/$RESOURCE_TYPE/$RESOURCE_NAME.tf
+        fi
       - echo "Adding files to Git..."
-      - git add terraform/$RESOURCE_TYPE/$RESOURCE_NAME.tf
       - echo "Committing changes..."
       - git commit -m "feat Import $RESOURCE_TYPE resource $RESOURCE_NAME to Terraform" || echo "No changes to commit"
       - echo "Pulling latest changes before push..."
