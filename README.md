@@ -34,7 +34,16 @@ Amazon Q Developer로 구현한 어플리케이션의 데모 영상을 입력합
 - 적절한 AWS 권한 (S3, CloudFront 관리 권한)
 - region은 `us-east-1`로 설정
 
-### 2. Terraform 실행
+### 2. GitHub Token 설정
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id github-token \
+  --secret-string '{"token":"your-github-token-here"}' \
+  --region us-east-1
+```
+
+### 3. Terraform 실행
 
 ```bash
 # Terraform 초기화
@@ -55,14 +64,14 @@ var.bucket_name
   Enter a value: <고유한 S3 경로를 입력합니다.>
 ```
 
-### 3. 자동 처리 과정
+### 4. 자동 처리 과정
 
 `terraform apply` 실행 시 다음이 자동으로 처리됩니다:
-1. AWS 인프라 생성 (S3, CloudFront 등)
+1. AWS 인프라 생성 (S3, SNS, CloudTrail 등)
 2. `../1. code` 디렉토리의 파일들을 S3에 자동 업로드
 3. 파일별 적절한 Content-Type 설정
 
-### 4. AWS 출력 아키텍처
+### 5. AWS 출력 아키텍처
 
 Terraform을 실행 한 후 다음의 정보들이 AWS에 배포되게 됩니다.
 - **CloudTrail**: AWS 리소스 생성 이벤트 감지
@@ -77,7 +86,7 @@ Terraform을 실행 한 후 다음의 정보들이 AWS에 배포되게 됩니다
 ![architecture](./pictures/hackathon-diagram.png)
 
 
-### 5. 리소스 정리
+### 6. 리소스 정리
 
 인프라를 삭제하려면:
 
