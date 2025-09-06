@@ -17,30 +17,30 @@ phases:
       - mkdir -p /tmp/terraform-workspace
       - cd /tmp/terraform-workspace
       
-      # S3에서 기존 Terraform 파일들 다운로드
-      - echo "Downloading existing Terraform files from S3..."
-      - aws s3 sync s3://$S3_BUCKET/terraform/ ./terraform/ || echo "No existing files"
+      - echo "Creating Terraform configuration..."
+      - echo "$TERRAFORM_CODE" > $RESOURCE_NAME.tf
       
-      # 새로운 리소스 파일 생성
-      - echo "Creating new Terraform file..."
-      - mkdir -p terraform/$RESOURCE_TYPE
-      - cat > terraform/$RESOURCE_TYPE/$RESOURCE_NAME.tf << EOF
-      - $TERRAFORM_CODE
-      - EOF
-      
-      # Backend 설정 파일 생성
-      - cat > backend.tf << 'EOF'
+      - echo "Creating provider configuration..."
+      - cat > provider.tf << 'PROVIDER_EOF'
       - terraform {
+      -   required_version = ">= 1.0"
+      -   required_providers {
+      -     aws = {
+      -       source  = "hashicorp/aws"
+      -       version = "~> 5.0"
+      -     }
+      -   }
       -   backend "s3" {
-      -     bucket = "$STATE_BUCKET"
-      -     key    = "imported-resources/terraform.tfstate"
-      -     region = "us-east-1"
+      -     bucket         = "terraform-sync-state-6395e36ea95d48ee"
+      -     key            = "s3_bucket/terraform.tfstate"
+      -     region         = "us-east-1"
+      -     dynamodb_table = "terraform-sync-locks"
       -   }
       - }
       - provider "aws" {
       -   region = "us-east-1"
       - }
-      - EOF
+      - PROVIDER_EOF
       
   build:
     commands:
@@ -58,9 +58,6 @@ phases:
       
   post_build:
     commands:
-      - echo "Uploading updated Terraform files to S3..."
-      - aws s3 sync ./terraform/ s3://$S3_BUCKET/terraform/
-      
       - echo "Getting GitHub token from Secrets Manager..."
       - export GITHUB_TOKEN=$(aws secretsmanager get-secret-value --secret-id github-token --query SecretString --output text | jq -r .token)
       
@@ -77,7 +74,7 @@ phases:
       
       - echo "Copying Terraform files to Git repository..."
       - mkdir -p terraform/$RESOURCE_TYPE
-      - cp /tmp/terraform-workspace/terraform/$RESOURCE_TYPE/$RESOURCE_NAME.tf terraform/$RESOURCE_TYPE/
+      - cp /tmp/terraform-workspace/$RESOURCE_NAME.tf terraform/$RESOURCE_TYPE/
       
       - echo "Checking for changes..."
       - |
