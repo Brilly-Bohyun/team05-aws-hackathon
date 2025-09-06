@@ -18,7 +18,8 @@ phases:
       - echo "Setting up Terraform workspace..."
       - mkdir -p /tmp/terraform-workspace
       - echo "Copying existing Terraform files..."
-      - if [ -d "/tmp/git-repo/terraform/$RESOURCE_TYPE" ]; then
+      - |
+        if [ -d "/tmp/git-repo/terraform/$RESOURCE_TYPE" ]; then
           cp /tmp/git-repo/terraform/$RESOURCE_TYPE/*.tf /tmp/terraform-workspace/ 2>/dev/null || echo "No existing .tf files found"
         fi
       - cd /tmp/terraform-workspace
