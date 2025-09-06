@@ -148,3 +148,22 @@ resource "aws_lambda_function" "action_handler" {
     }
   }
 }
+
+# EC2 Creator Lambda
+data "archive_file" "ec2_creator_zip" {
+  type        = "zip"
+  output_path = "/tmp/ec2_creator.zip"
+  source {
+    content  = file("${path.module}/src/lambda_ec2_creator.py")
+    filename = "lambda_function.py"
+  }
+}
+
+resource "aws_lambda_function" "ec2_creator" {
+  filename         = data.archive_file.ec2_creator_zip.output_path
+  function_name    = "terraform-sync-ec2-creator"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "lambda_function.lambda_handler"
+  runtime         = "python3.9"
+  timeout         = 60
+}
